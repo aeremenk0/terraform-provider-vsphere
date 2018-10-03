@@ -96,8 +96,8 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 
 	if val, ok := config["default_username"]; ok {
 		username = val.(string)
-	} else if val, ok := config["root_username"]; ok {
-		username = val.(string)
+	} else {
+		username = "root"
 	}
 
 	if val, ok := config["default_password"]; ok {
@@ -113,39 +113,40 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		password = "VMware1!"
 	}
 
-	// also need code to get that folder
-	/*
+	// This will set the folder that the host is added to
+	rf := strings.NewReader("")
+	urlf := "https://" + c.URL().Host + "/rest/vcenter/folder"
+	reqf, err := http.NewRequest("GET", urlf, rf)
+	reqf.Header.Add("Accept", "application/json")
+	reqf.Header.Add("Content-Type", "application/json")
+	reqf.Header.Add("vmware-api-session-id", apiSessionId)
+	resf, err := c.Do(reqf)
+	// Get the ID
+	bodyf, err := ioutil.ReadAll(resf.Body)
+	contf := make(map[string]interface{})
+	err = json.Unmarshal(bodyf, &contf)
+	if err != nil {
+		return err
+	}
 
-		This part is not working yet
+	array := contf["value"].([]interface{})
 
-		rf := strings.NewReader("")
-		urlf := "https://"+c.URL().Host+"/rest/vcenter/folder"
-		reqf, err := http.NewRequest("POST",urlf,rf)
-		reqf.Header.Add("Accept","application/json")
-		reqf.Header.Add("Content-Type","application/json")
-		reqf.Header.Add("vmware-api-session-id",apiSessionId)
-		resf, err :=c.Do(reqf)
-		// Get the ID
-		bodyf, err := ioutil.ReadAll(resf.Body)
-		contf := make(map[string]interface{}{})
-		err = json.Unmarshal(bodyf,&contf)
-		if err != nil{
-			return err
+	// We should be getting the folder from the datacenter but we will deal with that later
+	//dcID := d.Get("datacenter_id").(string)
+	//dc, err := datacenterFromID(c, dcID)
+
+	//folder := dc.InventoryPath
+
+	folder := ""
+
+	for i := range array {
+
+		if array[i].(map[string]interface{})["type"].(string) == "HOST" {
+			folder = array[i].(map[string]interface{})["folder"].(string)
 		}
-		folders, err := ioutil.ReadAll(strings.NewReader(contf["value"].(string)))
+	}
 
-		var array itemdata
-		err = json.Unmarshal(folders,&array)
-		folder := ""
-
-		for i := 0; i < len(array); i++ {
-			if array[i]["type"].(string) == "DATACENTER" {
-				folder = array[i]["folder"].(string)
-			}
-		}
-	*/
-
-	folder := "group-h4"
+	//folder := "group-h4"
 	//,\"force_add\":\"true\"
 
 	// API Call to add the host
