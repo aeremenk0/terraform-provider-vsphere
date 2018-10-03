@@ -42,6 +42,11 @@ func resourceVSphereHost() *schema.Resource {
 			Description: "Configuration for the host.",
 			Optional:    true,
 		},
+		"iscsi_config": &schema.Schema{
+			Type:        schema.TypeMap,
+			Description: "Configuration for the host iscsi adapter.",
+			Optional:    true,
+		},
 	}
 
 	return &schema.Resource{
@@ -83,6 +88,7 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	var hostname string
 	var username string
 	var password string
+	var connected string
 
 	// Try to get the connection credentials from the default fields.
 	// These fields are intended for initial login.  Terraform will set the username and password to whatever is specified in the username and password fields, and then use those fields to login afterwards.  Same thing with the host name.
@@ -113,6 +119,10 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		password = "VMware1!"
 	}
 
+	if val, ok := config["connected"]; ok {
+		connected = val.(string)
+	}
+
 	// This will set the folder that the host is added to
 	rf := strings.NewReader("")
 	urlf := "https://" + c.URL().Host + "/rest/vcenter/folder"
@@ -138,7 +148,6 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	//folder := dc.InventoryPath
 
 	folder := ""
-
 	for i := range array {
 
 		if array[i].(map[string]interface{})["type"].(string) == "HOST" {
@@ -175,12 +184,37 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 	//return fmt.Errorf("Response from vCenter: %s", contout)
-	if val, ok := contout["value"]; ok {
+	// Check that the request was successful
+	var host_id string
+	if val, ok := contout["type"]; ok {
+		if val.(string) == "com.vmware.vapi.std.errors.internal_server_error" {
+			// Host has already been added
+			req, err = http.NewRequest("GET", url, strings.NewReader(""))
+			req.Header.Add("Accept", "application/json")
+			req.Header.Add("Content-Type", "application/json")
 
-		d.Set("host_id", val.(string))
+			// need a separate call to get session id
+			req.Header.Add("vmware-api-session-id", apiSessionId)
+			res, err = c.Do(req)
+			body, err := ioutil.ReadAll(res.Body)
+			if err != nil {
+				return err
+			}
+			contout := make(map[string]interface{})
+			err = json.Unmarshal(body, &contout)
+
+			array := contout["value"].([]interface{})
+			for i := range array {
+
+				if array[i].(map[string]interface{})["name"].(string) == hostname {
+					host_id = array[i].(map[string]interface{})["host"].(string)
+				}
+			}
+		}
+	} else {
+		host_id = contout["value"].(string)
 	}
-
-	//err = setIscsi(d,meta)
+	d.Set("host_id", host_id)
 
 	// Set ISCSI
 	// Need:
@@ -189,104 +223,86 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	// chap_secret
 	// direction - set to mutual for now
 	// send_target - will support only one for now
-	/*
-		if val, ok := config["iscsi_adapter"]; ok {
-			iscsiConfig := val.(map[string]interface{})
-			// set iscsi adapter
-			if val, ok := iscsiConfig["adapter_name"]; ok {
-				_ = val
-			} else {
-				return fmt.Errorf("Iscsi parameter \"adapter_name\" is undefined")
-			}
 
-			argsIscsi := []string{"iscsi","adapter","set","-A",iscsiConfig["adapter_name"].(string)}
-			// send to esx cli
-			_ = argsIscsi
+	iscsiConfig := d.Get("iscsi_config").(map[string]interface{})
+	// set iscsi adapter
+	if val, ok := iscsiConfig["adapter_name"]; ok {
+		_ = val
+	} else {
+		return fmt.Errorf("iscsi parameter \"adapter_name\" is undefined")
+	}
 
-			err := validateIscsiChapInputs(iscsiConfig)
-			if err != nil {
-				return err
-			}
-			argsIscsiChap := []string{"iscsi","adapter","auth","chap","set","-A",iscsiConfig["adapter_name"].(string),"-N",iscsiConfig["auth_name"].(string),"-S",iscsiConfig["chap_secret"].(string)}
-			// send to esx cli
-			_ = argsIscsiChap
+	argsIscsi := []string{"iscsi", "adapter", "set", "-A", iscsiConfig["adapter_name"].(string)}
+	// send to esx cli
+	_ = argsIscsi
+	err = validateIscsiChapInputs(iscsiConfig)
+	if err != nil {
+		return err
+	}
+	argsIscsiChap := []string{"iscsi", "adapter", "auth", "chap", "set", "-A", iscsiConfig["adapter_name"].(string), "-N", iscsiConfig["auth_name"].(string), "-S", iscsiConfig["chap_secret"].(string)}
+	// send to esx cli
+	_ = argsIscsiChap
+	err = validateIscsiSendTargetInputs(iscsiConfig)
+	if err != nil {
+		return err
+	}
+	argsIscsiTarget := []string{"iscsi", "adapter", "auth", "chap", "set", "-A", iscsiConfig["adapter_name"].(string), "-a", iscsiConfig["send_target"].(string)}
+	// send to esx cli
+	_ = argsIscsiTarget
 
-			err = validateIscsiSendTargetInputs(iscsiConfig)
-			if err != nil {
-				return err
-			}
-			argsIscsiTarget := []string{"iscsi","adapter","auth","chap","set","-A",iscsiConfig["adapter_name"].(string),"-a",iscsiConfig["send_target"].(string)}
-			// send to esx cli
-			_ = argsIscsiTarget
-
+	// Set NTP
+	if val, ok := config["ntp_server"]; ok {
+		_ = val
+		argsNtp := []string{}
+		_ = argsNtp
+	}
+	// Set networking information
+	if val, ok := config["dns"]; ok {
+		if val.(string) == "dhcp" {
+			argsDns := []string{"network", "ip", "dns"}
+			_ = argsDns
+		} else {
+			argsDns := []string{}
+			_ = argsDns
 		}
 
-		// Set NTP
-		if val, ok := config["ntp_server"]; ok {
-			_ = val
-			argsNtp := []string{}
+	}
 
-			_ = argsNtp
+	// Set whether SSH is enabled
+	if val, ok := config["enable_ssh"]; ok {
+		_ = val
+		argsSsh := []string{}
+		_ = argsSsh
+	}
 
-		}
-
-		// Set networking information
-		if val, ok := config["dns"]; ok {
-			if val.(string) == "dhcp" {
-				argsDns := []string{"network","ip","dns"}
-				_ = argsDns
-			} else {
-				argsDns := []string{}
-				_ = argsDns
-			}
-
-
-
-		}
-
-		// Set whether SSH is enabled
-		if val, ok := config["enable_ssh"]; ok {
-			_ = val
-			argsSsh := []string{}
-
-			_ = argsSsh
-		}
-
-		// Set default username and password
-		if val, ok := config["root_password"]; ok {
-			_ = val
-			argsRpw := []string{"system","account","set","--id","root","--password",val.(string),"--password-confirmation",val.(string)}
-
-			_ = argsRpw
-		}
-	*/
+	// Set default username and password
+	if val, ok := config["root_password"]; ok {
+		_ = val
+		argsRpw := []string{"system", "account", "set", "--id", "root", "--password", val.(string), "--password-confirmation", val.(string)}
+		_ = argsRpw
+	}
 
 	// Set whether the host is connected or not
-	if val, ok := config["connected"]; ok {
-		_ = val
-		if val.(bool) == true {
-			urlcon := "https://" + c.URL().Host + "/rest/vcenter/host/" + d.Get("host_id").(string) + "/connect"
-			r := strings.NewReader("")
-			req, err := http.NewRequest("POST", urlcon, r)
-			if err != nil {
-				return err
-			}
-			req.Header.Add("vmware-api-session-id", apiSessionId)
-			rescon, err := c.Do(req)
-			_ = rescon
-
-		} else {
-			urlcon := "https://" + c.URL().Host + "/rest/vcenter/host/" + d.Get("host_id").(string) + "/disconnect"
-			r := strings.NewReader("")
-			req, err := http.NewRequest("POST", urlcon, r)
-			if err != nil {
-				return err
-			}
-			req.Header.Add("vmware-api-session-id", apiSessionId)
-			rescon, err := c.Do(req)
-			_ = rescon
+	if connected == "1" {
+		urlcon := "https://" + c.URL().Host + "/rest/vcenter/host/" + host_id + "/connect"
+		r := strings.NewReader("")
+		req, err := http.NewRequest("POST", urlcon, r)
+		if err != nil {
+			return err
 		}
-
+		req.Header.Add("vmware-api-session-id", apiSessionId)
+		rescon, err := c.Do(req)
+		_ = rescon
+	} else if connected == "0" {
+		urlcon := "https://" + c.URL().Host + "/rest/vcenter/host/" + host_id + "/disconnect"
+		r := strings.NewReader("")
+		req, err := http.NewRequest("POST", urlcon, r)
+		if err != nil {
+			return err
+		}
+		req.Header.Add("vmware-api-session-id", apiSessionId)
+		rescon, err := c.Do(req)
+		_ = rescon
 	}
 
 	return resourceVSphereHostRead(d, meta)

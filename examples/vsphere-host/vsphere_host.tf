@@ -23,7 +23,16 @@ variable "config1" {
 		ntp_server="asdf"
 		enable_ssh=true
 		connected=true
-		iscsi_adapter="asdf"
+	}
+}
+
+variable "iscsi_config" {
+	type="map"
+	default = {
+		adapter_name="test"
+		auth_name="test"
+		chap_secret="test"
+		send_target="test"
 	}
 }
 
@@ -31,5 +40,6 @@ resource "vsphere_host" "h1"{
 	name = "192.168.75.135"
 	datacenter_id = "${data.vsphere_datacenter.dc.id}"
 	host_config = "${var.config1}"
+	iscsi_config = "${var.iscsi_config}"
 	
 }
