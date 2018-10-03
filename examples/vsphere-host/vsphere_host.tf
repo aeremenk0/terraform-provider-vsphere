@@ -33,9 +33,3 @@ resource "vsphere_host" "h1"{
 	host_config = "${var.config1}"
 	
 }
-
-
-r := strings.NewReader(s)
-req, err := http.NewRequest("POST", url, r)
-req.Header.Add("vmware-api-session-id", apiSessionId)
-res, err := c.Do(req)
