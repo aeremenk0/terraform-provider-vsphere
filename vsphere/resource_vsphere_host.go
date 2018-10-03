@@ -175,44 +175,118 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 	//return fmt.Errorf("Response from vCenter: %s", contout)
-	host_id := contout["value"]
+	if val, ok := contout["value"]; ok {
 
-	d.Set("host_id", host_id)
+		d.Set("host_id", val.(string))
+	}
 
 	//err = setIscsi(d,meta)
 
 	// Set ISCSI
-	if val, ok := config["iscsi_adapter"]; ok {
-		_ = val
-	}
+	// Need:
+	// adapter_name
+	// auth_name
+	// chap_secret
+	// direction - set to mutual for now
+	// send_target - will support only one for now
+	/*
+		if val, ok := config["iscsi_adapter"]; ok {
+			iscsiConfig := val.(map[string]interface{})
+			// set iscsi adapter
+			if val, ok := iscsiConfig["adapter_name"]; ok {
+				_ = val
+			} else {
+				return fmt.Errorf("Iscsi parameter \"adapter_name\" is undefined")
+			}
 
-	// Set NTP
-	if val, ok := config["ntp_server"]; ok {
-		_ = val
-	}
+			argsIscsi := []string{"iscsi","adapter","set","-A",iscsiConfig["adapter_name"].(string)}
+			// send to esx cli
+			_ = argsIscsi
 
-	// Set networking information
-	if val, ok := config["dns"]; ok {
-		_ = val
-	}
+			err := validateIscsiChapInputs(iscsiConfig)
+			if err != nil {
+				return err
+			}
+			argsIscsiChap := []string{"iscsi","adapter","auth","chap","set","-A",iscsiConfig["adapter_name"].(string),"-N",iscsiConfig["auth_name"].(string),"-S",iscsiConfig["chap_secret"].(string)}
+			// send to esx cli
+			_ = argsIscsiChap
 
-	// Set whether SSH is enabled
-	if val, ok := config["enable_ssh"]; ok {
-		_ = val
-	}
+			err = validateIscsiSendTargetInputs(iscsiConfig)
+			if err != nil {
+				return err
+			}
+			argsIscsiTarget := []string{"iscsi","adapter","auth","chap","set","-A",iscsiConfig["adapter_name"].(string),"-a",iscsiConfig["send_target"].(string)}
+			// send to esx cli
+			_ = argsIscsiTarget
 
-	// Set default username and password
-	if val, ok := config["root_username"]; ok {
-		_ = val
-	}
+		}
 
-	if val, ok := config["root_password"]; ok {
-		_ = val
-	}
+		// Set NTP
+		if val, ok := config["ntp_server"]; ok {
+			_ = val
+			argsNtp := []string{}
+
+			_ = argsNtp
+
+		}
+
+		// Set networking information
+		if val, ok := config["dns"]; ok {
+			if val.(string) == "dhcp" {
+				argsDns := []string{"network","ip","dns"}
+				_ = argsDns
+			} else {
+				argsDns := []string{}
+				_ = argsDns
+			}
+
+
+
+		}
+
+		// Set whether SSH is enabled
+		if val, ok := config["enable_ssh"]; ok {
+			_ = val
+			argsSsh := []string{}
+
+			_ = argsSsh
+		}
+
+		// Set default username and password
+		if val, ok := config["root_password"]; ok {
+			_ = val
+			argsRpw := []string{"system","account","set","--id","root","--password",val.(string),"--password-confirmation",val.(string)}
+
+			_ = argsRpw
+		}
+	*/
 
 	// Set whether the host is connected or not
 	if val, ok := config["connected"]; ok {
 		_ = val
+		if val.(bool) == true {
+			urlcon := "https://" + c.URL().Host + "/rest/vcenter/host/" + d.Get("host_id").(string) + "/connect"
+			r := strings.NewReader("")
+			req, err := http.NewRequest("POST", urlcon, r)
+			if err != nil {
+				return err
+			}
+			req.Header.Add("vmware-api-session-id", apiSessionId)
+			rescon, err := c.Do(req)
+			_ = rescon
+
+		} else {
+			urlcon := "https://" + c.URL().Host + "/rest/vcenter/host/" + d.Get("host_id").(string) + "/disconnect"
+			r := strings.NewReader("")
+			req, err := http.NewRequest("POST", urlcon, r)
+			if err != nil {
+				return err
+			}
+			req.Header.Add("vmware-api-session-id", apiSessionId)
+			rescon, err := c.Do(req)
+			_ = rescon
+		}
+
 	}
 
 	return resourceVSphereHostRead(d, meta)
@@ -343,3 +417,41 @@ func setIscsi(d *schema.ResourceData, meta interface{}) error{
 
 }
 */
+
+func validateIscsiChapInputs(params map[string]interface{}) error {
+	if val, ok := params["adapter_name"]; ok {
+		_ = val
+	} else {
+		return fmt.Errorf("Iscsi parameter \"adapter_name\" is undefined")
+	}
+
+	if val, ok := params["auth_name"]; ok {
+		_ = val
+	} else {
+		return fmt.Errorf("Iscsi parameter \"auth_name\" is undefined")
+	}
+
+	if val, ok := params["chap_secret"]; ok {
+		_ = val
+	} else {
+		return fmt.Errorf("Iscsi parameter \"chap_secret\" is undefined")
+	}
+
+	return nil
+}
+
+func validateIscsiSendTargetInputs(params map[string]interface{}) error {
+	if val, ok := params["adapter_name"]; ok {
+		_ = val
+	} else {
+		return fmt.Errorf("Iscsi parameter \"adapter_name\" is undefined")
+	}
+
+	if val, ok := params["send_target"]; ok {
+		_ = val
+	} else {
+		return fmt.Errorf("Iscsi parameter \"send_target\" is undefined")
+	}
+
+	return nil
+}
