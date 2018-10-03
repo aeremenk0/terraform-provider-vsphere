@@ -180,6 +180,40 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 
 	//err = setIscsi(d,meta)
 
+	// Set ISCSI
+	if val, ok := config["iscsi_adapter"]; ok {
+		_ = val
+	}
+
+	// Set NTP
+	if val, ok := config["ntp_server"]; ok {
+		_ = val
+	}
+
+	// Set networking information
+	if val, ok := config["dns"]; ok {
+		_ = val
+	}
+
+	// Set whether SSH is enabled
+	if val, ok := config["enable_ssh"]; ok {
+		_ = val
+	}
+
+	// Set default username and password
+	if val, ok := config["root_username"]; ok {
+		_ = val
+	}
+
+	if val, ok := config["root_password"]; ok {
+		_ = val
+	}
+
+	// Set whether the host is connected or not
+	if val, ok := config["connected"]; ok {
+		_ = val
+	}
+
 	return resourceVSphereHostRead(d, meta)
 }
 
