@@ -13,11 +13,6 @@ data "vsphere_datacenter" "dc"{
 variable "config1" {
 	type="map"
 	default = {
-		default_ip="192.168.75.135"
-		default_username="root"
-		default_password="VMware1!"
-		hostname="192.168.75.135"
-		fqdn="asdf"
 		dns="asdf"
 		root_password="VMware1!"
 		ntp_server="asdf"
@@ -37,7 +32,7 @@ variable "iscsi_config" {
 }
 
 resource "vsphere_host" "h1"{
-	name = "192.168.75.135"
+	name = "192.168.75.133"
 	datacenter_id = "${data.vsphere_datacenter.dc.id}"
 	host_config = "${var.config1}"
 	iscsi_config = "${var.iscsi_config}"

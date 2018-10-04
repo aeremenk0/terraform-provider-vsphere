@@ -47,6 +47,11 @@ func resourceVSphereHost() *schema.Resource {
 			Description: "Configuration for the host iscsi adapter.",
 			Optional:    true,
 		},
+		"host_id": &schema.Schema{
+			Type:        schema.TypeString,
+			Description: "The managed object ID of the host's root resource pool.",
+			Computed:    true,
+		},
 	}
 
 	return &schema.Resource{
@@ -85,31 +90,16 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	// Get the parameters for the API call
 	config := d.Get("host_config").(map[string]interface{})
 
-	var hostname string
-	var username string
+	hostname := d.Get("name").(string)
+	username := "root"
 	var password string
 	var connected string
 
 	// Try to get the connection credentials from the default fields.
 	// These fields are intended for initial login.  Terraform will set the username and password to whatever is specified in the username and password fields, and then use those fields to login afterwards.  Same thing with the host name.
-	if val, ok := config["default_ip"]; ok {
-		hostname = val.(string)
-	} else if val, ok := config["fqdn"]; ok {
-		hostname = val.(string)
-	} else if val, ok := config["hostname"]; ok {
-		hostname = val.(string)
-	}
 
-	if val, ok := config["default_username"]; ok {
-		username = val.(string)
-	} else {
-		username = "root"
-	}
-
-	if val, ok := config["default_password"]; ok {
+	if val, ok := config["root_password"]; ok {
 		password = val.(string)
-	} else if val, ok := config["root_password"]; ok {
-		username = val.(string)
 	}
 
 	if username == "" {
