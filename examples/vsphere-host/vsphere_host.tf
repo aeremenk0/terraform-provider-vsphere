@@ -1,20 +1,12 @@
-provider "vsphere" {
-	user="administrator@vsphere.local"
-	password="VMware1!"
-	vsphere_server="192.168.75.100"
-	allow_unverified_ssl=true
-}
-
-
 data "vsphere_datacenter" "dc"{
-	name = "Datacenter"
+	name = "BAUM"
 }
 
 variable "config1" {
 	type="map"
 	default = {
 		dns="asdf"
-		root_password="VMware1!"
+		root_password="jP1!cH@s"
 		ntp_server="asdf"
 		enable_ssh=true
 		connected=true
@@ -24,6 +16,7 @@ variable "config1" {
 variable "iscsi_config" {
 	type="map"
 	default = {
+		
 		adapter_name="test"
 		auth_name="test"
 		chap_secret="test"
@@ -32,9 +25,8 @@ variable "iscsi_config" {
 }
 
 resource "vsphere_host" "h1"{
-	name = "192.168.75.133"
+	name ="icpcdc200847.svr.us.jpmchase.net"
 	datacenter_id = "${data.vsphere_datacenter.dc.id}"
 	host_config = "${var.config1}"
 	iscsi_config = "${var.iscsi_config}"
-	
 }

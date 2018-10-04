@@ -369,7 +369,7 @@ func getSessionId(c *govmomi.Client) (string, error) {
 
 	urlauth := "https://" + c.URL().Host + "/rest/com/vmware/cis/session"
 	reqauth, err := http.NewRequest("POST", urlauth, rauth)
-	reqauth.Header.Add("Authorization", "Basic YWRtaW5pc3RyYXRvckB2c3BoZXJlLmxvY2FsOlZNd2FyZTEh")
+	reqauth.SetBasicAuth(c.user, c.password)
 	reqauth.Header.Add("Accept", "application/json")
 	reqauth.Header.Add("Content-Type", "application/json")
 	resauth, err := c.Do(reqauth)
