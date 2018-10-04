@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
-	"github.com/vmware/govmomi"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -65,7 +64,6 @@ func resourceVSphereHost() *schema.Resource {
 }
 
 func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
-
 	// Watch out for this error: https://kb.vmware.com/s/article/2148065?lang=en_US
 
 	// Add the iscsi piece into this - high priority
@@ -82,10 +80,10 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 
 	c := meta.(*VSphereClient).vimClient
 
-	apiSessionId, err := getSessionId(c)
-	if err != nil {
-		return err
-	}
+	// Get REST Client for Session ID
+	rc := meta.(*VSphereClient).tagsClient
+
+	apiSessionId := rc.SessionID()
 
 	// Get the parameters for the API call
 	config := d.Get("host_config").(map[string]interface{})
@@ -339,10 +337,10 @@ func resourceVSphereHostDelete(d *schema.ResourceData, meta interface{}) error {
 
 	c := meta.(*VSphereClient).vimClient
 
-	apiSessionId, err := getSessionId(c)
-	if err != nil {
-		return err
-	}
+	// Get REST Client for Session ID
+	rc := meta.(*VSphereClient).tagsClient
+
+	apiSessionId := rc.SessionID()
 
 	r := strings.NewReader("")
 	// Need to get part of the url from client
@@ -362,34 +360,6 @@ func resourceVSphereHostDelete(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	return nil
-}
-
-func getSessionId(c *govmomi.Client) (string, error) {
-	rauth := strings.NewReader("{}")
-
-	urlauth := "https://" + c.URL().Host + "/rest/com/vmware/cis/session"
-	reqauth, err := http.NewRequest("POST", urlauth, rauth)
-	reqauth.SetBasicAuth(c.user, c.password)
-	reqauth.Header.Add("Accept", "application/json")
-	reqauth.Header.Add("Content-Type", "application/json")
-	resauth, err := c.Do(reqauth)
-
-	//out, err2 := ioutil.ReadAll(resauth.Body)
-	//_ = err2
-	//return fmt.Errorf("getting session id response: %s", out)
-	if err != nil {
-		return "", err
-	}
-
-	// Get the value from the body
-	bodyauth, err := ioutil.ReadAll(resauth.Body)
-	cont := make(map[string]interface{})
-	err = json.Unmarshal(bodyauth, &cont)
-	if err != nil {
-		return "", err
-	}
-	apiSessionId := cont["value"].(string)
-	return apiSessionId, nil
 }
 
 /*
