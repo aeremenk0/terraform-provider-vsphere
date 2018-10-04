@@ -13,11 +13,6 @@ data "vsphere_datacenter" "dc"{
 variable "config1" {
 	type="map"
 	default = {
-		default_ip="192.168.75.135"
-		default_username="root"
-		default_password="VMware1!"
-		hostname="192.168.75.135"
-		fqdn="asdf"
 		dns="asdf"
 		root_password="VMware1!"
 		ntp_server="asdf"
@@ -29,16 +24,11 @@ variable "config1" {
 variable "config2" {
 	type="map"
 	default = {
-		default_ip="192.168.75.134"
-		default_username="root"
-		default_password="VMware1!"
-		hostname=""
-		fqdn="asdf"
 		dns="asdf"
 		root_password="VMware1!"
 		ntp_server="asdf"
 		enable_ssh=true
-		connected=false
+		connected=true
 	}
 }
 
