@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
+	"github.com/vmware/govmomi/govc/host/esxcli"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -216,27 +217,49 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	// set iscsi adapter
 	if val, ok := iscsiConfig["adapter_name"]; ok {
 		_ = val
-	} else {
-		return fmt.Errorf("iscsi parameter \"adapter_name\" is undefined")
+		argsIscsi := []string{"iscsi", "adapter", "set", "-A", iscsiConfig["adapter_name"].(string)}
+		// send to esx cli
+		err = runEsxCliCommand(d, meta, argsIscsi)
+		if err != nil {
+			return err
+		}
 	}
 
-	argsIscsi := []string{"iscsi", "adapter", "set", "-A", iscsiConfig["adapter_name"].(string)}
-	// send to esx cli
-	_ = argsIscsi
 	err = validateIscsiChapInputs(iscsiConfig)
-	if err != nil {
-		return err
+	if err == nil {
+		argsIscsiChap := []string{"iscsi", "adapter", "auth", "chap", "set", "-A", iscsiConfig["adapter_name"].(string), "-N", iscsiConfig["auth_name"].(string), "-S", iscsiConfig["chap_secret"].(string)}
+		// send to esx cli
+		err = runEsxCliCommand(d, meta, argsIscsiChap)
+		if err != nil {
+			return err
+		}
 	}
-	argsIscsiChap := []string{"iscsi", "adapter", "auth", "chap", "set", "-A", iscsiConfig["adapter_name"].(string), "-N", iscsiConfig["auth_name"].(string), "-S", iscsiConfig["chap_secret"].(string)}
-	// send to esx cli
-	_ = argsIscsiChap
+
+	// iSCSI set target
 	err = validateIscsiSendTargetInputs(iscsiConfig)
-	if err != nil {
-		return err
+	if err == nil {
+		argsIscsiTarget := []string{"iscsi", "adapter", "auth", "chap", "set", "-A", iscsiConfig["adapter_name"].(string), "-a", iscsiConfig["send_target"].(string)}
+		// send to esx cli
+		err = runEsxCliCommand(d, meta, argsIscsiTarget)
+		if err != nil {
+			return err
+		}
 	}
-	argsIscsiTarget := []string{"iscsi", "adapter", "auth", "chap", "set", "-A", iscsiConfig["adapter_name"].(string), "-a", iscsiConfig["send_target"].(string)}
-	// send to esx cli
-	_ = argsIscsiTarget
+
+	// Set Maintenance Mode
+	if val, ok := config["maintenance_mode"]; ok {
+		var argsMaint []string
+		if val.(string) == "1" {
+			argsMaint = []string{"system", "maintenanceMode", "set", "-e", "true"}
+		} else if val.(string) == "0" {
+			argsMaint = []string{"system", "maintenanceMode", "set", "-e", "false"}
+		}
+		// send to esx cli
+		err = runEsxCliCommand(d, meta, argsMaint)
+		if err != nil {
+			return err
+		}
+	}
 
 	// Set NTP
 	if val, ok := config["ntp_server"]; ok {
@@ -362,37 +385,35 @@ func resourceVSphereHostDelete(d *schema.ResourceData, meta interface{}) error {
 	return nil
 }
 
-/*
-func setIscsi(d *schema.ResourceData, meta interface{}) error{
+func runEsxCliCommand(d *schema.ResourceData, meta interface{}, args []string) error {
 
-	c2 := meta.(*VSphereClient).vimClient
+	c := meta.(*VSphereClient).vimClient
+
 	name := d.Get("name").(string)
 	dcID := d.Get("datacenter_id").(string)
-	dc, err := datacenterFromID(c2, dcID)
+	dc, err := datacenterFromID(c, dcID)
 
 	if err != nil {
 		return fmt.Errorf("error fetching datacenter: %s", err)
 	}
 
-	hs, err := hostsystem.SystemOrDefault(c2, name, dc)
+	hs, err := hostsystem.SystemOrDefault(c, name, dc)
 
-	arg := []string{"system","maintenanceMode","set","-e","true"}
+	//arg := []string{"system","maintenanceMode","set","-e","true"}
 	//com := esxcli.NewCommand(arg)
 
-	exec, err := esxcli.NewExecutor(c2.Client,hs)
-	if err != nil{
+	exec, err := esxcli.NewExecutor(c.Client, hs)
+	if err != nil {
 		return err
 	}
 
-	resp, err := exec.Run(arg)
+	resp, err := exec.Run(args)
 
-	_=resp
-
+	_ = resp
 
 	return err
 
 }
-*/
 
 func validateIscsiChapInputs(params map[string]interface{}) error {
 	if val, ok := params["adapter_name"]; ok {
