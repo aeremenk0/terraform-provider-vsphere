@@ -43,7 +43,10 @@ func hostVSwitchFromName(client *govmomi.Client, ns *object.HostNetworkSystem, n
 		return nil, fmt.Errorf("error fetching host network properties: %s", err)
 	}
 
+	fmt.Printf("------------------- CHECKING FOR VSWITCH")
+
 	for _, sw := range mns.NetworkInfo.Vswitch {
+		fmt.Printf("--------NetworkInfo.Vswitch: %s", sw.Name)
 		if sw.Name == name {
 			return &sw, nil
 		}

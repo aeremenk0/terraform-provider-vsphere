@@ -1,9 +1,8 @@
 package vsphere
 
 import (
-	"fmt"
-
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
@@ -48,7 +47,10 @@ func resourceVSphereHostVirtualSwitch() *schema.Resource {
 		Update:        resourceVSphereHostVirtualSwitchUpdate,
 		Delete:        resourceVSphereHostVirtualSwitchDelete,
 		CustomizeDiff: resourceVSphereHostVirtualSwitchCustomizeDiff,
-		Schema:        s,
+		Importer: &schema.ResourceImporter{
+			State: resourceVSphereHostVirtualSwitchImport,
+		},
+		Schema: s,
 	}
 }
 
@@ -169,4 +171,28 @@ func resourceVSphereHostVirtualSwitchCustomizeDiff(d *schema.ResourceDiff, meta 
 	}
 
 	return nil
+}
+
+func resourceVSphereHostVirtualSwitchImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	client := meta.(*VSphereClient).vimClient
+	hsID, name, err := virtualSwitchIDsFromResourceID(d)
+	if err != nil {
+		return nil, err
+	}
+	ns, err := hostNetworkSystemFromHostSystemID(client, hsID)
+	if err != nil {
+		return nil, fmt.Errorf("error loading host network system: %s", err)
+	}
+
+	sw, err := hostVSwitchFromName(client, ns, name)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching virtual switch data: %s", err)
+	}
+
+	if err := flattenHostVirtualSwitchSpec(d, &sw.Spec); err != nil {
+		return nil, fmt.Errorf("error setting resource data: %s", err)
+	}
+
+	return []*schema.ResourceData{d}, nil
+
 }
