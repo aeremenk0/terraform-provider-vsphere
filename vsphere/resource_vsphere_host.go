@@ -247,19 +247,21 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	// Set Maintenance Mode
-	if val, ok := config["maintenance_mode"]; ok {
-		var argsMaint []string
-		if val.(string) == "1" {
-			argsMaint = []string{"system", "maintenanceMode", "set", "-e", "true"}
-		} else if val.(string) == "0" {
-			argsMaint = []string{"system", "maintenanceMode", "set", "-e", "false"}
+	/*
+		if val, ok := config["maintenance_mode"]; ok {
+			var argsMaint []string
+			if val.(string) == "1" {
+				argsMaint = []string{"system", "maintenanceMode", "set", "-e", "true"}
+			} else if val.(string) == "0" {
+				argsMaint = []string{"system", "maintenanceMode", "set", "-e", "false"}
+			}
+			// send to esx cli
+			err = runEsxCliCommand(d, meta, argsMaint)
+			if err != nil {
+				return err
+			}
 		}
-		// send to esx cli
-		err = runEsxCliCommand(d, meta, argsMaint)
-		if err != nil {
-			return err
-		}
-	}
+	*/
 
 	// Set NTP
 	if val, ok := config["ntp_server"]; ok {
@@ -287,11 +289,13 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	// Set default username and password
-	if val, ok := config["root_password"]; ok {
-		_ = val
-		argsRpw := []string{"system", "account", "set", "--id", "root", "--password", val.(string), "--password-confirmation", val.(string)}
-		_ = argsRpw
-	}
+	/*
+		if val, ok := config["root_password"]; ok {
+			_ = val
+			argsRpw := []string{"system", "account", "set", "--id", "root", "--password", val.(string), "--password-confirmation", val.(string)}
+			_ = argsRpw
+		}
+	*/
 
 	// Set whether the host is connected or not
 	if connected == "1" {
