@@ -99,13 +99,8 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 
 	if val, ok := config["root_password"]; ok {
 		password = val.(string)
-	}
+	} else {
 
-	if username == "" {
-		username = "root"
-	}
-	if password == "" {
-		password = "VMware1!"
 	}
 
 	if val, ok := config["connected"]; ok {
@@ -120,6 +115,7 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	reqf.Header.Add("Content-Type", "application/json")
 	reqf.Header.Add("vmware-api-session-id", apiSessionId)
 	resf, err := c.Do(reqf)
+
 	// Get the ID
 	bodyf, err := ioutil.ReadAll(resf.Body)
 	contf := make(map[string]interface{})
@@ -130,12 +126,6 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 
 	array := contf["value"].([]interface{})
 
-	// We should be getting the folder from the datacenter but we will deal with that later
-	//dcID := d.Get("datacenter_id").(string)
-	//dc, err := datacenterFromID(c, dcID)
-
-	//folder := dc.InventoryPath
-
 	folder := ""
 	for i := range array {
 
@@ -144,20 +134,15 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		}
 	}
 
-	//folder := "group-h4"
-	//,\"force_add\":\"true\"
-
 	// API Call to add the host
 	bod := "{\"spec\":{\"folder\":\"" + folder + "\",\"hostname\":\"" + hostname + "\",\"password\":\"" + password + "\",\"user_name\":\"" + username + "\",\"thumbprint_verification\":\"NONE\"}}"
 	s := bod
 	r := strings.NewReader(s)
-	// Need to get part of the url from client
 	url := "https://" + c.URL().Host + "/rest/vcenter/host"
 	req, err := http.NewRequest("POST", url, r)
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Content-Type", "application/json")
 
-	// need a separate call to get session id
 	req.Header.Add("vmware-api-session-id", apiSessionId)
 	res, err := c.Do(req)
 
@@ -172,7 +157,7 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	if err != nil {
 		return err
 	}
-	//return fmt.Errorf("Response from vCenter: %s", contout)
+
 	// Check that the request was successful
 	var host_id string
 	if val, ok := contout["type"]; ok {
@@ -212,9 +197,10 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	// chap_secret
 	// direction - set to mutual for now
 	// send_target - will support only one for now
-
 	iscsiConfig := d.Get("iscsi_config").(map[string]interface{})
+
 	// set iscsi adapter
+	// WIP
 	if val, ok := iscsiConfig["adapter_name"]; ok {
 		_ = val
 		argsIscsi := []string{"iscsi", "adapter", "set", "-A", iscsiConfig["adapter_name"].(string)}
@@ -236,6 +222,7 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	// iSCSI set target
+	// WIP
 	err = validateIscsiSendTargetInputs(iscsiConfig)
 	if err == nil {
 		argsIscsiTarget := []string{"iscsi", "adapter", "auth", "chap", "set", "-A", iscsiConfig["adapter_name"].(string), "-a", iscsiConfig["send_target"].(string)}
@@ -247,21 +234,17 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	// Set Maintenance Mode
-	/*
-		if val, ok := config["maintenance_mode"]; ok {
-			var argsMaint []string
-			if val.(string) == "1" {
-				argsMaint = []string{"system", "maintenanceMode", "set", "-e", "true"}
-			} else if val.(string) == "0" {
-				argsMaint = []string{"system", "maintenanceMode", "set", "-e", "false"}
-			}
-			// send to esx cli
-			err = runEsxCliCommand(d, meta, argsMaint)
-			if err != nil {
-				return err
-			}
+	if val, ok := config["maintenance_mode"]; ok {
+		var argsMaint []string
+		if val.(string) == "1" {
+			argsMaint = []string{"system", "maintenanceMode", "set", "-e", "true"}
+		} else if val.(string) == "0" {
+			argsMaint = []string{"system", "maintenanceMode", "set", "-e", "false"}
 		}
-	*/
+		// send to esx cli
+		err = runEsxCliCommand(d, meta, argsMaint)
+		_ = err
+	}
 
 	// Set NTP
 	if val, ok := config["ntp_server"]; ok {
@@ -270,6 +253,7 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		_ = argsNtp
 	}
 	// Set networking information
+	// WIP
 	if val, ok := config["dns"]; ok {
 		if val.(string) == "dhcp" {
 			argsDns := []string{"network", "ip", "dns"}
@@ -282,6 +266,7 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	// Set whether SSH is enabled
+	// WIP
 	if val, ok := config["enable_ssh"]; ok {
 		_ = val
 		argsSsh := []string{}
@@ -289,13 +274,12 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	// Set default username and password
-	/*
-		if val, ok := config["root_password"]; ok {
-			_ = val
-			argsRpw := []string{"system", "account", "set", "--id", "root", "--password", val.(string), "--password-confirmation", val.(string)}
-			_ = argsRpw
-		}
-	*/
+	// WIP
+	if val, ok := config["root_password"]; ok {
+		_ = val
+		argsRpw := []string{"system", "account", "set", "--id", "root", "--password", val.(string), "--password-confirmation", val.(string)}
+		_ = argsRpw
+	}
 
 	// Set whether the host is connected or not
 	if connected == "1" {
@@ -345,6 +329,28 @@ func resourceVSphereHostRead(d *schema.ResourceData, meta interface{}) error {
 	}
 	id := hs.Reference().Value
 	d.SetId(id)
+
+	// need to return the virtual switch as well, so we need to return multiple objects
+	hsID := id
+	vname := "vSwitch0"
+	hsw := d
+
+	ns, err := hostNetworkSystemFromHostSystemID(client, hsID)
+	if err != nil {
+		return fmt.Errorf("error loading host network system: %s", err)
+	}
+
+	sw, err := hostVSwitchFromName(client, ns, vname)
+	if err != nil {
+		return fmt.Errorf("error fetching virtual switch data: %s", err)
+	}
+
+	if err := flattenHostVirtualSwitchSpec(hsw, &sw.Spec); err != nil {
+		return fmt.Errorf("error setting resource data: %s", err)
+	}
+
+	d.Set("vswitch", []*schema.ResourceData{hsw})
+
 	return nil
 }
 
