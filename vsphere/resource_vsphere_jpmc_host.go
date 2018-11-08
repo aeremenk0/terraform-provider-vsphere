@@ -1,31 +1,37 @@
 package vsphere
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/find"
+	"github.com/vmware/govmomi/govc/host/esxcli"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/types"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"strings"
 )
 
-type host struct {
+type vspherejpmchost struct {
 	datacenter string
 	connected  bool
 	name       string
 }
 
-type itemdata []map[string]interface{}
+type itemdataJpmc []map[string]interface{}
 
-func resourceVSphereHost() *schema.Resource {
+func resourceVsphereJpmcHost() *schema.Resource {
 
 	s := map[string]*schema.Schema{
-		//"name": &schema.Schema{
-		//	Type: schema.TypeString,
-		//	Description: "The name of the host. This can be a name or path.	If not provided, the default host is used.",
-		//	Optional: true,
-		//},
+		"name": &schema.Schema{
+			Type: schema.TypeString,
+			Description: "The name of the host. This can be a name or path.	If not provided, the default host is used.",
+			Optional: true,
+		},
 		"datacenter_id": &schema.Schema{
 			Type:        schema.TypeString,
 			Description: "The managed object ID of the datacenter to look for the host in.",
@@ -54,16 +60,16 @@ func resourceVSphereHost() *schema.Resource {
 	}
 
 	return &schema.Resource{
-		Create: resourceVSphereHostCreate,
-		Read:   resourceVSphereHostRead,
-		Update: resourceVSphereHostUpdate,
-		Delete: resourceVSphereHostDelete,
+		Create: resourceVsphereJpmcHostCreate,
+		Read:   resourceVsphereJpmcHostRead,
+		Update: resourceVsphereJpmcHostUpdate,
+		Delete: resourceVsphereJpmcHostDelete,
 		Schema: s,
 	}
 
 }
 
-func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
+func resourceVsphereJpmcHostCreate(d *schema.ResourceData, meta interface{}) error {
 	// Watch out for this error: https://kb.vmware.com/s/article/2148065?lang=en_US
 
 	// Add the iscsi piece into this - high priority
@@ -303,22 +309,24 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		_ = rescon
 	}
 
-	return resourceVSphereHostRead(d, meta)
+	return resourceVsphereJpmcHostRead(d, meta)
 }
 
-func resourceVSphereHostRead(d *schema.ResourceData, meta interface{}) error {
+func resourceVsphereJpmcHostRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*VSphereClient).vimClient
 	name := d.Get("name").(string)
 	dcID := d.Get("datacenter_id").(string)
-	dc, err := datacenterFromID(client, dcID)
+	dc, err := GetDatacenterFromID(client, dcID)
 	if err != nil {
 		return fmt.Errorf("error fetching datacenter: %s", err)
 	}
-	hs, err := hostsystem.SystemOrDefault(client, name, dc)
+	hs, err := HostSystemOrDefault(client, name, dc)
 	if err != nil {
-		return fmt.Errorf("error fetching host in resourceVSphereHostRead: %s", err)
+		return fmt.Errorf("error fetching host in resourceVsphereJpmcHostRead: %s", err)
 	}
-	rp, err := hostsystem.ResourcePool(hs)
+
+	// need to take out hostsystem -----------------------------------------------
+	rp, err := HostResourcePool(hs)
 	if err != nil {
 		return err
 	}
@@ -330,39 +338,41 @@ func resourceVSphereHostRead(d *schema.ResourceData, meta interface{}) error {
 	d.SetId(id)
 
 	// need to return the virtual switch as well, so we need to return multiple objects
-	hsID := id
-	vname := "vSwitch0"
+	/*
+		hsID := id
+		vname := "vSwitch0"
 
-	ns, err := hostNetworkSystemFromHostSystemID(client, hsID)
-	if err != nil {
-		return fmt.Errorf("error loading host network system: %s", err)
-	}
+		ns, err := hostNetworkSystemFromHostSystemID(client, hsID)
+		if err != nil {
+			return fmt.Errorf("error loading host network system: %s", err)
+		}
 
-	sw, err := hostVSwitchFromName(client, ns, vname)
-	if err != nil {
-		return fmt.Errorf("error fetching virtual switch data: %s", err)
-	}
+		sw, err := hostVSwitchFromName(client, ns, vname)
+		if err != nil {
+			return fmt.Errorf("error fetching virtual switch data: %s", err)
+		}
 
-	if err := flattenHostVirtualSwitchSpec(d, &sw.Spec); err != nil {
-		return fmt.Errorf("error setting resource data: %s", err)
-	}
+		if err := flattenHostVirtualSwitchSpec(d, &sw.Spec); err != nil {
+			return fmt.Errorf("error setting resource data: %s", err)
+		}
+	*/
 
 	return nil
 }
 
-func resourceVSphereHostUpdate(d *schema.ResourceData, meta interface{}) error {
+func resourceVsphereJpmcHostUpdate(d *schema.ResourceData, meta interface{}) error {
 	// There isnt really much to do in order to update this stuff
 	// try to add but dont do anything if there is an error?
 
 	// maybe add abiity to disonnect host
 	//
 
-	err := resourceVSphereHostCreate(d, meta)
+	err := resourceVsphereJpmcHostCreate(d, meta)
 
 	return err
 }
 
-func resourceVSphereHostDelete(d *schema.ResourceData, meta interface{}) error {
+func resourceVsphereJpmcHostDelete(d *schema.ResourceData, meta interface{}) error {
 
 	c := meta.(*VSphereClient).vimClient
 
@@ -391,20 +401,19 @@ func resourceVSphereHostDelete(d *schema.ResourceData, meta interface{}) error {
 	return nil
 }
 
-/*
 func runEsxCliCommand(d *schema.ResourceData, meta interface{}, args []string) error {
 
 	c := meta.(*VSphereClient).vimClient
 
 	name := d.Get("name").(string)
 	dcID := d.Get("datacenter_id").(string)
-	dc, err := datacenterFromID(c, dcID)
+	dc, err := HostDatacenterFromID(c, dcID)
 
 	if err != nil {
 		return fmt.Errorf("error fetching datacenter: %s", err)
 	}
 
-	hs, err := hostsystem.SystemOrDefault(c, name, dc)
+	hs, err := HostSystemOrDefault(c, name, dc)
 
 	//arg := []string{"system","maintenanceMode","set","-e","true"}
 	//com := esxcli.NewCommand(arg)
@@ -459,4 +468,77 @@ func validateIscsiSendTargetInputs(params map[string]interface{}) error {
 
 	return nil
 }
-*/
+
+func HostSystemOrDefault(client *govmomi.Client, name string, dc *object.Datacenter) (*object.HostSystem, error) {
+	finder := find.NewFinder(client.Client, false)
+	finder.SetDatacenter(dc)
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
+	t := client.ServiceContent.About.ApiType
+	switch t {
+	case "HostAgent":
+		return finder.DefaultHostSystem(ctx)
+	case "VirtualCenter":
+		if name != "" {
+			return finder.HostSystem(ctx, name)
+		}
+		return finder.DefaultHostSystem(ctx)
+	}
+	return nil, fmt.Errorf("unsupported ApiType: %s", t)
+}
+
+func GetHostFromID(client *govmomi.Client, id string) (*object.HostSystem, error) {
+	log.Printf("[DEBUG] Locating host system ID %s", id)
+	finder := find.NewFinder(client.Client, false)
+
+	ref := types.ManagedObjectReference{
+		Type:  "HostSystem",
+		Value: id,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
+	hs, err := finder.ObjectReference(ctx, ref)
+	if err != nil {
+		return nil, fmt.Errorf("could not find host system with id: %s: %s", id, err)
+	}
+	log.Printf("[DEBUG] Host system found: %s", hs.Reference().Value)
+	return hs.(*object.HostSystem), nil
+}
+
+func GetDatacenterFromID(client *govmomi.Client, id string) (*object.Datacenter, error) {
+	finder := find.NewFinder(client.Client, false)
+
+	ref := types.ManagedObjectReference{
+		Type:  "Datacenter",
+		Value: id,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
+	ds, err := finder.ObjectReference(ctx, ref)
+	if err != nil {
+		return nil, fmt.Errorf("could not find datacenter with id: %s: %s", id, err)
+	}
+	return ds.(*object.Datacenter), nil
+}
+
+// specified HostSystem managed object ID.
+func GetHostNetworkSystemFromHostSystemID(client *govmomi.Client, hsID string) (*object.HostNetworkSystem, error) {
+	hs, err := GetHostFromID(client, hsID)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
+	return hs.ConfigManager().NetworkSystem(ctx)
+
+}
+
+func HostResourcePool(host *object.HostSystem) (*object.ResourcePool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
+	return host.ResourcePool(ctx)
+}

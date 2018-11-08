@@ -56,7 +56,7 @@ func schemaHostVirtualSwitchBondBridge() map[string]*schema.Schema {
 		// HostVirtualSwitchBondBridge
 		"network_adapters": &schema.Schema{
 			Type:        schema.TypeList,
-			Required:    true,
+			Optional:    true,
 			Description: "The list of network adapters to bind to this virtual switch.",
 			Elem:        &schema.Schema{Type: schema.TypeString},
 		},

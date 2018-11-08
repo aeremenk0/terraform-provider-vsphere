@@ -120,6 +120,7 @@ func Provider() terraform.ResourceProvider {
 			"vsphere_vmfs_datastore":                          resourceVSphereVmfsDatastore(),
 			"vsphere_virtual_machine_snapshot":                resourceVSphereVirtualMachineSnapshot(),
 			"vsphere_host":                                    resourceVSphereHost(),
+			"vsphere_jpmc_host":                               resourceVsphereJpmcHost(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
@@ -138,6 +139,7 @@ func Provider() terraform.ResourceProvider {
 			"vsphere_virtual_machine":            dataSourceVSphereVirtualMachine(),
 			"vsphere_vmfs_disks":                 dataSourceVSphereVmfsDisks(),
 			"vsphere_host_config":                dataSourceVSphereHostConfig(),
+			"vsphere_jpmc_host":                  dataSourceVsphereJpmcHost(),
 		},
 
 		ConfigureFunc: providerConfigure,

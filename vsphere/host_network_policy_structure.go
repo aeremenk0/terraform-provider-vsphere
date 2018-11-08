@@ -37,11 +37,13 @@ func schemaHostNetworkPolicy() map[string]*schema.Schema {
 			Type:        schema.TypeList,
 			Description: "List of active network adapters used for load balancing.",
 			Elem:        &schema.Schema{Type: schema.TypeString},
+			Optional:    true,
 		},
 		"standby_nics": &schema.Schema{
 			Type:        schema.TypeList,
 			Description: "List of standby network adapters used for failover.",
 			Elem:        &schema.Schema{Type: schema.TypeString},
+			Optional:    true,
 		},
 
 		// HostNicTeamingPolicy

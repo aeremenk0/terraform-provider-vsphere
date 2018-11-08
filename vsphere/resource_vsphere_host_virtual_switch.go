@@ -19,7 +19,7 @@ func resourceVSphereHostVirtualSwitch() *schema.Resource {
 		"host_system_id": &schema.Schema{
 			Type:        schema.TypeString,
 			Description: "The managed object ID of the host to set the virtual switch up on.",
-			Required:    true,
+			Optional:    true,
 			ForceNew:    true,
 		},
 	}
@@ -40,6 +40,20 @@ func resourceVSphereHostVirtualSwitch() *schema.Resource {
 	s["allow_mac_changes"].Default = true
 
 	s["shaping_enabled"].Default = false
+
+	s["active_nics"].Required = false
+	s["standby_nics"].Required = false
+
+	s["teaming_policy"].Required = false
+	s["check_beacon"].Required = false
+	s["notify_switches"].Required = false
+	s["failback"].Required = false
+
+	s["allow_promiscuous"].Required = false
+	s["allow_forged_transmits"].Required = false
+	s["allow_mac_changes"].Required = false
+
+	s["shaping_enabled"].Required = false
 
 	return &schema.Resource{
 		Create:        resourceVSphereHostVirtualSwitchCreate,
