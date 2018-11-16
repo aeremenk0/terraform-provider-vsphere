@@ -330,27 +330,6 @@ func resourceVSphereHostRead(d *schema.ResourceData, meta interface{}) error {
 	id := hs.Reference().Value
 	d.SetId(id)
 
-	// need to return the virtual switch as well, so we need to return multiple objects
-	hsID := id
-	vname := "vSwitch0"
-	hsw := d
-
-	ns, err := hostNetworkSystemFromHostSystemID(client, hsID)
-	if err != nil {
-		return fmt.Errorf("error loading host network system: %s", err)
-	}
-
-	sw, err := hostVSwitchFromName(client, ns, vname)
-	if err != nil {
-		return fmt.Errorf("error fetching virtual switch data: %s", err)
-	}
-
-	if err := flattenHostVirtualSwitchSpec(hsw, &sw.Spec); err != nil {
-		return fmt.Errorf("error setting resource data: %s", err)
-	}
-
-	d.Set("vswitch", []*schema.ResourceData{hsw})
-
 	return nil
 }
 
