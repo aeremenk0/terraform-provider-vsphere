@@ -10,69 +10,54 @@ data "vsphere_datacenter" "dc"{
 	name = "Datacenter"
 }
 
+variable "advanced" {
+	type="map"
+	default = {
+		
+	}
+}
+
 variable "config1" {
 	type="map"
 	default = {
-		dns="asdf"
+		default_ip="192.168.75.135"
+		default_username="root"
+		default_password="VMware1!"
 		root_password="VMware1!"
-		ntp_server="asdf"
 		enable_ssh=true
 		connected=true
-	}
-}
-
-variable "config2" {
-	type="map"
-	default = {
-		dns="asdf"
-		root_password="VMware1!"
-		ntp_server="asdf"
-		enable_ssh=true
-		connected=true
-	}
-}
-
-variable "iscsi_config1" {
-	type="map"
-	default = {
-		adapter_name="test"
-		auth_name="test"
-		chap_secret="test"
-		send_target="test"
+		maintenance_mode=true
 	}
 }
 
 variable "iscsi_config2" {
 	type="map"
 	default = {
-		adapter_name="test"
-		auth_name="test"
-		chap_secret="test"
-		send_target="test"
+		enable = true
+		adapter_name="vmhba65"
+		chap_name="test"
+		chap_secret="testabc"
+		chap_direction="mutual"
+		chap_level="required"
+		send_target="192.168.100.1:443"
 	}
 }
 
-resource "vsphere_host" "h1"{
-	name = "192.168.75.135"
-	datacenter_id = "${data.vsphere_datacenter.dc.id}"
-	host_config = "${var.config1}"
-	iscsi_config = "${var.iscsi_config1}"
-	
-}
 
 resource "vsphere_host" "h2"{
 	name = "192.168.75.134"
 	datacenter_id = "${data.vsphere_datacenter.dc.id}"
-	host_config = "${var.config2}"
+	host_config = "${var.config1}"
 	iscsi_config = "${var.iscsi_config2}"
+	advanced_options = "${var.advanced}"
 	
 }
 
 resource "vsphere_compute_cluster" "compute_cluster" {
   name            = "terraform-compute-cluster-test"
   datacenter_id   = "${data.vsphere_datacenter.dc.id}"
-  host_system_ids = ["${vsphere_host.h1.id}","${vsphere_host.h2.id}"]
-
+  host_system_ids = ["${vsphere_host.h2.id}"]
+  force_evacuate_on_destroy = true
   drs_enabled          = false
 
   ha_enabled = false
@@ -81,5 +66,25 @@ resource "vsphere_compute_cluster" "compute_cluster" {
 resource "vsphere_compute_cluster_host_group" "cluster_host_group" {
   name                = "terraform-test-cluster-host-group"
   compute_cluster_id  = "${vsphere_compute_cluster.compute_cluster.id}"
-  host_system_ids     = ["${vsphere_host.h1.id}","${vsphere_host.h2.id}"]
+  host_system_ids     = ["${vsphere_host.h2.id}"]
+}
+
+resource "vsphere_host_virtual_switch" "switch" {
+  name           = "vSwitch0"
+  host_system_id = "${vsphere_host.h2.id}"
+  
+  network_adapters = ["vmnic0"]
+  mtu = 1500
+
+  active_nics  = ["vmnic0"]
+  standby_nics = []
+}
+
+resource "vsphere_host_port_group" "pg" {
+  name                = "PGTerraformTest"
+  host_system_id      = "${vsphere_host.h2.id}"
+  virtual_switch_name = "${vsphere_host_virtual_switch.switch.name}"
+  
+  vlan_id = 1
+  
 }
