@@ -47,6 +47,11 @@ func resourceVSphereHost() *schema.Resource {
 			Description: "Configuration for the host iscsi adapter.",
 			Optional:    true,
 		},
+		"advanced_options": &schema.Schema{
+			Type:        schema.TypeMap,
+			Description: "Configuration for the host's advanced options.",
+			Optional:    true,
+		},
 		"host_id": &schema.Schema{
 			Type:        schema.TypeString,
 			Description: "The managed object ID of the host's root resource pool.",
@@ -192,44 +197,119 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 
 	// Set ISCSI
 	// Need:
+	// enable
+	//
 	// adapter_name
-	// auth_name
+	// chap_name
 	// chap_secret
-	// direction - set to mutual for now
+	// chap_direction - set to mutual for now
 	// send_target - will support only one for now
+
+	/*
+
+		example:
+		variable "iscsi_config1" {
+		type="map"
+		default = {
+			enable = true
+			adapter_name="vmhba65"
+			chap_name="test"
+			chap_secret="testabc"
+			chap_direction="mutual"
+			chap_level="required"
+			send_target="192.168.100.1:443"
+		}
+	}
+
+	*/
+
 	iscsiConfig := d.Get("iscsi_config").(map[string]interface{})
 
-	// set iscsi adapter
-	// WIP
-	if val, ok := iscsiConfig["adapter_name"]; ok {
-		_ = val
-		argsIscsi := []string{"iscsi", "adapter", "set", "-A", iscsiConfig["adapter_name"].(string)}
-		// send to esx cli
-		err = runEsxCliCommand(d, meta, argsIscsi)
-		if err != nil {
-			return err
-		}
-	}
+	// iscsi software set -e true
+	// iscsi adapter list
+	// iscsi adapter auth chap set -A adapter_name -N chap_name -S chap_secret -l required
+	// iscsi adapter auth chap set -A adapter_name -N chap_name -S chap_secret -l required -d mutual
+	// iscsi adapter discovry sendtarget add -A adapter_name -a ip:port
 
-	err = validateIscsiChapInputs(iscsiConfig)
-	if err == nil {
-		argsIscsiChap := []string{"iscsi", "adapter", "auth", "chap", "set", "-A", iscsiConfig["adapter_name"].(string), "-N", iscsiConfig["auth_name"].(string), "-S", iscsiConfig["chap_secret"].(string)}
-		// send to esx cli
-		err = runEsxCliCommand(d, meta, argsIscsiChap)
-		if err != nil {
-			return err
-		}
-	}
+	// iscsi
+	if val, ok := iscsiConfig["enable"]; ok {
+		if val.(string) == "1" {
+			argsIscsi := []string{"iscsi", "software", "set", "-e", "true"}
+			// send to esx cli
+			err = runEsxCliCommand(d, meta, argsIscsi)
+			if err != nil {
+				return err
+			}
 
-	// iSCSI set target
-	// WIP
-	err = validateIscsiSendTargetInputs(iscsiConfig)
-	if err == nil {
-		argsIscsiTarget := []string{"iscsi", "adapter", "auth", "chap", "set", "-A", iscsiConfig["adapter_name"].(string), "-a", iscsiConfig["send_target"].(string)}
-		// send to esx cli
-		err = runEsxCliCommand(d, meta, argsIscsiTarget)
-		if err != nil {
-			return err
+			// get default adapter name
+			/*
+				argsIscsiDef := []string{"iscsi", "adapter", "list", "|", "grep","iscsi_vmk","|","awk","'{print $1;}'"}
+				// send to esx cli
+				default_adapter, err := runEsxCliCommandOutput(d, meta, argsIscsiDef)
+				if err != nil {
+					return err
+				}
+
+
+				// set iscsi adapter name
+				// WIP
+				if default_adapter != "" {
+					if val, ok := iscsiConfig["adapter_name"]; ok {
+						_ = val
+						argsIscsi := []string{"iscsi", "adapter", "set", "-A", default_adapter, "-N", iscsiConfig["adapter_name"].(string), "-a", iscsiConfig["adapter_name"].(string)}
+						// send to esx cli
+						err = runEsxCliCommand(d, meta, argsIscsi)
+						if err != nil {
+							return err
+						}
+					}
+				}
+			*/
+
+			// Set the ISCSI Chap config
+			err = validateIscsiChapInputs(iscsiConfig)
+			if err == nil {
+				argsIscsiChap := []string{"iscsi", "adapter", "auth", "chap", "set", "-A", iscsiConfig["adapter_name"].(string), "-N", iscsiConfig["chap_name"].(string), "-S", iscsiConfig["chap_secret"].(string), "-l", iscsiConfig["chap_level"].(string)}
+				// send to esx cli
+				err = runEsxCliCommand(d, meta, argsIscsiChap)
+				if err != nil {
+					return err
+				}
+
+				// Set to mutual
+				if val, ok := iscsiConfig["chap_direction"]; ok {
+					argsIscsiChap = []string{"iscsi", "adapter", "auth", "chap", "set", "-A", iscsiConfig["adapter_name"].(string), "-N", iscsiConfig["chap_name"].(string), "-S", iscsiConfig["chap_secret"].(string), "-l", iscsiConfig["chap_level"].(string), "-d", val.(string)}
+					// send to esx cli
+					err = runEsxCliCommand(d, meta, argsIscsiChap)
+					if err != nil {
+						return err
+					}
+				}
+
+			}
+
+			// iSCSI set target
+			// WIP
+			err = validateIscsiSendTargetInputs(iscsiConfig)
+			if err == nil {
+				argsIscsiTarget := []string{"iscsi", "adapter", "discovery", "sendtarget", "add", "-A", iscsiConfig["adapter_name"].(string), "-a", iscsiConfig["send_target"].(string)}
+				// send to esx cli
+				err = runEsxCliCommand(d, meta, argsIscsiTarget)
+				if err != nil {
+					return err
+				}
+			}
+
+			// Set the nics for iscsi
+			// Still need to do this part
+
+		} else {
+			argsIscsi := []string{"iscsi", "software", "set", "-e", "false"}
+			// send to esx cli
+			err = runEsxCliCommand(d, meta, argsIscsi)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -279,6 +359,28 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		_ = val
 		argsRpw := []string{"system", "account", "set", "--id", "root", "--password", val.(string), "--password-confirmation", val.(string)}
 		_ = argsRpw
+	}
+
+	// Set advanced options
+	// come back to this
+	if val, ok := config["advanced_options"]; ok {
+		_ = val
+		argsAdv := []string{"system", "settings", "advanced", "set", "-o", "", "-s", ""}
+
+		values := config["advanced_options"].(map[string]string)
+
+		for k := range values {
+			// Need to check if the arguement is supposed to be a string or an integer
+			if _, err := fmt.Sscanf(values[k], "%d", &k); err == nil {
+				argsAdv = []string{"system", "settings", "advanced", "set", "-o", k, "-i", values[k]}
+			} else {
+				argsAdv = []string{"system", "settings", "advanced", "set", "-o", k, "-s", values[k]}
+			}
+			err = runEsxCliCommand(d, meta, argsAdv)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	// Set whether the host is connected or not
@@ -404,6 +506,36 @@ func runEsxCliCommand(d *schema.ResourceData, meta interface{}, args []string) e
 
 }
 
+func runEsxCliCommandOutput(d *schema.ResourceData, meta interface{}, args []string) (string, error) {
+
+	c := meta.(*VSphereClient).vimClient
+
+	name := d.Get("name").(string)
+	dcID := d.Get("datacenter_id").(string)
+	dc, err := datacenterFromID(c, dcID)
+
+	if err != nil {
+		return "", fmt.Errorf("error fetching datacenter: %s", err)
+	}
+
+	hs, err := hostsystem.SystemOrDefault(c, name, dc)
+
+	//arg := []string{"system","maintenanceMode","set","-e","true"}
+	//com := esxcli.NewCommand(arg)
+
+	exec, err := esxcli.NewExecutor(c.Client, hs)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := exec.Run(args)
+
+	_ = resp
+
+	return "", err
+
+}
+
 func validateIscsiChapInputs(params map[string]interface{}) error {
 	if val, ok := params["adapter_name"]; ok {
 		_ = val
@@ -411,7 +543,7 @@ func validateIscsiChapInputs(params map[string]interface{}) error {
 		return fmt.Errorf("Iscsi parameter \"adapter_name\" is undefined")
 	}
 
-	if val, ok := params["auth_name"]; ok {
+	if val, ok := params["chap_name"]; ok {
 		_ = val
 	} else {
 		return fmt.Errorf("Iscsi parameter \"auth_name\" is undefined")
@@ -440,4 +572,12 @@ func validateIscsiSendTargetInputs(params map[string]interface{}) error {
 	}
 
 	return nil
+}
+
+func getKeys(mymap map[string]string) []string {
+	keys := make([]string, 0, len(mymap))
+	for k := range mymap {
+		keys = append(keys, k)
+	}
+	return keys
 }
