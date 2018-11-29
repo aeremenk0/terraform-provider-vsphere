@@ -1,6 +1,7 @@
 package vsphere
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/hashicorp/terraform/helper/schema"
@@ -11,13 +12,12 @@ import (
 	"strings"
 )
 
-type host struct {
-	datacenter string
-	connected  bool
-	name       string
-}
-
-type itemdata []map[string]interface{}
+//type host struct {
+//	datacenter string
+//	connected  bool
+//	name       string
+//}
+//type itemdata []map[string]interface{}
 
 func resourceVSphereHost() *schema.Resource {
 
@@ -69,6 +69,45 @@ func resourceVSphereHost() *schema.Resource {
 
 }
 
+func do(client *VSphereClient, method string, resource string, body *bytes.Buffer, result interface{}) error {
+	url := "https://" + client.vimClient.URL().Host + resource
+	req, err := http.NewRequest(method, url, body)
+
+	if err != nil {
+		return err
+	}
+
+	c := client.tagsClient
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("vmware-api-session-id", c.SessionID())
+
+	res, err := c.HTTP.Do(req)
+
+	if err != nil {
+		return err
+	}
+
+	// Get the ID
+	data, err := ioutil.ReadAll(res.Body)
+
+	if err != nil {
+		return err
+	}
+
+	if res.StatusCode < 200 || res.StatusCode >= 303 {
+		return fmt.Errorf("HTTP status code: %d message: %v", res.StatusCode, data)
+	}
+
+	err = json.Unmarshal(data, &result)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	// Watch out for this error: https://kb.vmware.com/s/article/2148065?lang=en_US
 
@@ -84,6 +123,7 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	// add the ability to disconnect
 	// add the ability to wipe the esx state on delete
 
+	vsClinet := meta.(*VSphereClient)
 	c := meta.(*VSphereClient).vimClient
 
 	// Get REST Client for Session ID
@@ -96,35 +136,27 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 
 	hostname := d.Get("name").(string)
 	username := "root"
+
 	var password string
 	var connected string
 
 	// Try to get the connection credentials from the default fields.
-	// These fields are intended for initial login.  Terraform will set the username and password to whatever is specified in the username and password fields, and then use those fields to login afterwards.  Same thing with the host name.
+	// These fields are intended for initial login.
+	// Terraform will set the username and password to whatever is specified in the username and password fields,
+	// and then use those fields to login afterwards.  Same thing with the host name.
 
 	if val, ok := config["root_password"]; ok {
 		password = val.(string)
-	} else {
-
 	}
 
 	if val, ok := config["connected"]; ok {
 		connected = val.(string)
 	}
 
-	// This will set the folder that the host is added to
-	rf := strings.NewReader("")
-	urlf := "https://" + c.URL().Host + "/rest/vcenter/folder"
-	reqf, err := http.NewRequest("GET", urlf, rf)
-	reqf.Header.Add("Accept", "application/json")
-	reqf.Header.Add("Content-Type", "application/json")
-	reqf.Header.Add("vmware-api-session-id", apiSessionId)
-	resf, err := c.Do(reqf)
-
-	// Get the ID
-	bodyf, err := ioutil.ReadAll(resf.Body)
 	contf := make(map[string]interface{})
-	err = json.Unmarshal(bodyf, &contf)
+
+	err := do(vsClinet, "GET", "/rest/vcenter/folder", nil, contf)
+
 	if err != nil {
 		return err
 	}
@@ -207,19 +239,19 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 
 	/*
 
-		example:
-		variable "iscsi_config1" {
-		type="map"
-		default = {
-			enable = true
-			adapter_name="vmhba65"
-			chap_name="test"
-			chap_secret="testabc"
-			chap_direction="mutual"
-			chap_level="required"
-			send_target="192.168.100.1:443"
+			example:
+			variable "iscsi_config1" {
+			type="map"
+			default = {
+				enable = true
+				adapter_name="vmhba65"
+				chap_name="test"
+				chap_secret="testabc"
+				chap_direction="mutual"
+				chap_level="required"
+				send_target="192.168.100.1:443"
+			}
 		}
-	}
 
 	*/
 
