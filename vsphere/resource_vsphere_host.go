@@ -7,17 +7,11 @@ import (
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/vmware/govmomi/govc/host/esxcli"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strings"
 )
-
-//type host struct {
-//	datacenter string
-//	connected  bool
-//	name       string
-//}
-//type itemdata []map[string]interface{}
 
 func resourceVSphereHost() *schema.Resource {
 
@@ -69,7 +63,7 @@ func resourceVSphereHost() *schema.Resource {
 
 }
 
-func do(client *VSphereClient, method string, resource string, body *bytes.Buffer, result interface{}) error {
+func do(client *VSphereClient, method string, resource string, body io.Reader, result interface{}) error {
 	url := "https://" + client.vimClient.URL().Host + resource
 	req, err := http.NewRequest(method, url, body)
 
@@ -96,12 +90,101 @@ func do(client *VSphereClient, method string, resource string, body *bytes.Buffe
 	}
 
 	if res.StatusCode < 200 || res.StatusCode >= 303 {
-		return fmt.Errorf("HTTP status code: %d message: %v", res.StatusCode, data)
+		return fmt.Errorf("Unexpected response code '%d': %v", res.StatusCode, string(data))
 	}
 
-	err = json.Unmarshal(data, &result)
+	if result != nil {
+		if err := json.Unmarshal(data, &result); err != nil {
+			return fmt.Errorf("Response is not json, %v", string(data))
+		}
+	}
+
+	return nil
+}
+
+type HostData struct {
+	Folder                 string `json:"folder"`
+	HostName               string `json:"hostname"`
+	Password               string `json:"password"`
+	Username               string `json:"user_name"`
+	ThumbprintVerification string `json:"thumbprint_verification"`
+}
+
+type HostSpec struct {
+	Spec HostData `json:"spec"`
+}
+
+func NewHostSpec(folder string, hostname string, password string, username string) *HostSpec {
+	return &HostSpec{HostData{
+		Folder:                 folder,
+		HostName:               hostname,
+		Password:               password,
+		Username:               username,
+		ThumbprintVerification: "NONE",
+	}}
+}
+
+func s2json(s interface{}) io.Reader {
+	b := new(bytes.Buffer)
+
+	if s != nil {
+		json.NewEncoder(b).Encode(s)
+	}
+
+	return b
+}
+
+func getFolder(vsClient *VSphereClient) (string, error) {
+	resp := make(map[string]interface{})
+
+	err := do(vsClient, "GET", "/rest/vcenter/folder", strings.NewReader(""), &resp)
 
 	if err != nil {
+		return "", err
+	}
+
+	array := resp["value"].([]interface{})
+
+	folder := ""
+	for i := range array {
+		if array[i].(map[string]interface{})["type"].(string) == "HOST" {
+			folder = array[i].(map[string]interface{})["folder"].(string)
+		}
+	}
+
+	return folder, nil
+}
+
+func createHost(vsClient *VSphereClient, hostSpec HostSpec) (string, error) {
+	r := make(map[string]interface{})
+
+	if err := do(vsClient, "POST", "/rest/vcenter/host", s2json(hostSpec), &r); err != nil {
+		return "", err
+	}
+
+	hostID := r["value"].(string)
+
+	return hostID, nil
+}
+
+func connectHost(vsClient *VSphereClient, hostID string) error {
+	if err := do(vsClient, "POST", "/rest/vcenter/host/"+hostID+"/connect", strings.NewReader(""), nil); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func disconnectHost(vsClient *VSphereClient, hostID string) error {
+	if err := do(vsClient, "POST", "/rest/vcenter/host/"+hostID+"/disconnect", strings.NewReader(""), nil); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func deleteHost(vsClient *VSphereClient, hostID string) error {
+	if err := do(vsClient, "DELETE", "/rest/vcenter/host/"+hostID, strings.NewReader(""), nil); err != nil {
 		return err
 	}
 
@@ -123,13 +206,7 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	// add the ability to disconnect
 	// add the ability to wipe the esx state on delete
 
-	vsClinet := meta.(*VSphereClient)
-	c := meta.(*VSphereClient).vimClient
-
-	// Get REST Client for Session ID
-	rc := meta.(*VSphereClient).tagsClient
-
-	apiSessionId := rc.SessionID()
+	vsClient := meta.(*VSphereClient)
 
 	// Get the parameters for the API call
 	config := d.Get("host_config").(map[string]interface{})
@@ -153,79 +230,21 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		connected = val.(string)
 	}
 
-	contf := make(map[string]interface{})
-
-	err := do(vsClinet, "GET", "/rest/vcenter/folder", nil, contf)
+	folder, err := getFolder(vsClient)
 
 	if err != nil {
 		return err
-	}
-
-	array := contf["value"].([]interface{})
-
-	folder := ""
-	for i := range array {
-
-		if array[i].(map[string]interface{})["type"].(string) == "HOST" {
-			folder = array[i].(map[string]interface{})["folder"].(string)
-		}
 	}
 
 	// API Call to add the host
-	bod := "{\"spec\":{\"folder\":\"" + folder + "\",\"hostname\":\"" + hostname + "\",\"password\":\"" + password + "\",\"user_name\":\"" + username + "\",\"thumbprint_verification\":\"NONE\"}}"
-	s := bod
-	r := strings.NewReader(s)
-	url := "https://" + c.URL().Host + "/rest/vcenter/host"
-	req, err := http.NewRequest("POST", url, r)
-	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Content-Type", "application/json")
-
-	req.Header.Add("vmware-api-session-id", apiSessionId)
-	res, err := c.Do(req)
+	hostSpec := NewHostSpec(folder, hostname, password, username)
+	hostID, err := createHost(vsClient, *hostSpec)
 
 	if err != nil {
 		return err
 	}
 
-	// Get the ID
-	body, err := ioutil.ReadAll(res.Body)
-	contout := make(map[string]interface{})
-	err = json.Unmarshal(body, &contout)
-	if err != nil {
-		return err
-	}
-
-	// Check that the request was successful
-	var host_id string
-	if val, ok := contout["type"]; ok {
-		if val.(string) == "com.vmware.vapi.std.errors.internal_server_error" {
-			// Host has already been added
-			req, err = http.NewRequest("GET", url, strings.NewReader(""))
-			req.Header.Add("Accept", "application/json")
-			req.Header.Add("Content-Type", "application/json")
-
-			// need a separate call to get session id
-			req.Header.Add("vmware-api-session-id", apiSessionId)
-			res, err = c.Do(req)
-			body, err := ioutil.ReadAll(res.Body)
-			if err != nil {
-				return err
-			}
-			contout := make(map[string]interface{})
-			err = json.Unmarshal(body, &contout)
-
-			array := contout["value"].([]interface{})
-			for i := range array {
-
-				if array[i].(map[string]interface{})["name"].(string) == hostname {
-					host_id = array[i].(map[string]interface{})["host"].(string)
-				}
-			}
-		}
-	} else {
-		host_id = contout["value"].(string)
-	}
-	d.Set("host_id", host_id)
+	d.Set("host_id", hostID)
 
 	// Set ISCSI
 	// Need:
@@ -417,25 +436,13 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 
 	// Set whether the host is connected or not
 	if connected == "1" {
-		urlcon := "https://" + c.URL().Host + "/rest/vcenter/host/" + host_id + "/connect"
-		r := strings.NewReader("")
-		req, err := http.NewRequest("POST", urlcon, r)
-		if err != nil {
+		if err := connectHost(vsClient, hostID); err != nil {
 			return err
 		}
-		req.Header.Add("vmware-api-session-id", apiSessionId)
-		rescon, err := c.Do(req)
-		_ = rescon
 	} else if connected == "0" {
-		urlcon := "https://" + c.URL().Host + "/rest/vcenter/host/" + host_id + "/disconnect"
-		r := strings.NewReader("")
-		req, err := http.NewRequest("POST", urlcon, r)
-		if err != nil {
+		if err := disconnectHost(vsClient, hostID); err != nil {
 			return err
 		}
-		req.Header.Add("vmware-api-session-id", apiSessionId)
-		rescon, err := c.Do(req)
-		_ = rescon
 	}
 
 	return resourceVSphereHostRead(d, meta)
@@ -449,18 +456,22 @@ func resourceVSphereHostRead(d *schema.ResourceData, meta interface{}) error {
 	if err != nil {
 		return fmt.Errorf("error fetching datacenter: %s", err)
 	}
+
 	hs, err := hostsystem.SystemOrDefault(client, name, dc)
 	if err != nil {
 		return fmt.Errorf("error fetching host in resourceVSphereHostRead: %s", err)
 	}
+
 	rp, err := hostsystem.ResourcePool(hs)
 	if err != nil {
 		return err
 	}
+
 	err = d.Set("resource_pool_id", rp.Reference().Value)
 	if err != nil {
 		return err
 	}
+
 	id := hs.Reference().Value
 	d.SetId(id)
 
@@ -480,28 +491,9 @@ func resourceVSphereHostUpdate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceVSphereHostDelete(d *schema.ResourceData, meta interface{}) error {
+	vsClient := meta.(*VSphereClient)
 
-	c := meta.(*VSphereClient).vimClient
-
-	// Get REST Client for Session ID
-	rc := meta.(*VSphereClient).tagsClient
-
-	apiSessionId := rc.SessionID()
-
-	r := strings.NewReader("")
-	// Need to get part of the url from client
-	url := "https://" + c.URL().Host + "/rest/vcenter/host/" + d.Get("host_id").(string)
-	req, err := http.NewRequest("DELETE", url, r)
-	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Content-Type", "application/json")
-
-	// need a separate call to get session id
-	req.Header.Add("vmware-api-session-id", apiSessionId)
-	res, err := c.Do(req)
-
-	_ = res
-
-	if err != nil {
+	if err := deleteHost(vsClient, d.Get("host_id").(string)); err != nil {
 		return err
 	}
 
