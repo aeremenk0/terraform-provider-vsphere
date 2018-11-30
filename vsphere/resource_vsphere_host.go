@@ -63,7 +63,27 @@ func resourceVSphereHost() *schema.Resource {
 
 }
 
-func do(client *VSphereClient, method string, resource string, body io.Reader, result interface{}) error {
+type errorCheck func(response *http.Response) error
+
+func defaultErrorCheck(response *http.Response) error {
+	if response.StatusCode < 200 || response.StatusCode >= 303 {
+		return fmt.Errorf("Unexpected response code '%d'", response.StatusCode)
+	}
+
+	return nil
+}
+
+func connectErrorCheck(response *http.Response) error {
+	if response.StatusCode != 400 || response.StatusCode < 200 || response.StatusCode >= 303 {
+		return fmt.Errorf("Unexpected response code '%d'", response.StatusCode)
+	}
+
+	return nil
+}
+
+func doWithCheck(client *VSphereClient, method string, resource string, body io.Reader,
+	result interface{}, check errorCheck) error {
+
 	url := "https://" + client.vimClient.URL().Host + resource
 	req, err := http.NewRequest(method, url, body)
 
@@ -89,8 +109,8 @@ func do(client *VSphereClient, method string, resource string, body io.Reader, r
 		return err
 	}
 
-	if res.StatusCode < 200 || res.StatusCode >= 303 {
-		return fmt.Errorf("Unexpected response code '%d': %v", res.StatusCode, string(data))
+	if err := check(res); err != nil {
+		return fmt.Errorf(err.Error()+": %v", string(data))
 	}
 
 	if result != nil {
@@ -100,6 +120,10 @@ func do(client *VSphereClient, method string, resource string, body io.Reader, r
 	}
 
 	return nil
+}
+
+func do(client *VSphereClient, method string, resource string, body io.Reader, result interface{}) error {
+	return doWithCheck(client, method, resource, body, result, defaultErrorCheck)
 }
 
 type HostData struct {
@@ -168,7 +192,8 @@ func createHost(vsClient *VSphereClient, hostSpec HostSpec) (string, error) {
 }
 
 func connectHost(vsClient *VSphereClient, hostID string) error {
-	if err := do(vsClient, "POST", "/rest/vcenter/host/"+hostID+"/connect", strings.NewReader(""), nil); err != nil {
+	if err := doWithCheck(vsClient, "POST", "/rest/vcenter/host/"+hostID+"/connect",
+		strings.NewReader(""), nil, connectErrorCheck); err != nil {
 		return err
 	}
 
@@ -176,7 +201,8 @@ func connectHost(vsClient *VSphereClient, hostID string) error {
 }
 
 func disconnectHost(vsClient *VSphereClient, hostID string) error {
-	if err := do(vsClient, "POST", "/rest/vcenter/host/"+hostID+"/disconnect", strings.NewReader(""), nil); err != nil {
+	if err := doWithCheck(vsClient, "POST", "/rest/vcenter/host/"+hostID+"/disconnect",
+		strings.NewReader(""), nil, connectErrorCheck); err != nil {
 		return err
 	}
 
