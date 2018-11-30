@@ -74,7 +74,7 @@ func defaultErrorCheck(response *http.Response) error {
 }
 
 func connectErrorCheck(response *http.Response) error {
-	if response.StatusCode != 400 || response.StatusCode < 200 || response.StatusCode >= 303 {
+	if response.StatusCode != 400 && (response.StatusCode < 200 || response.StatusCode >= 303) {
 		return fmt.Errorf("Unexpected response code '%d'", response.StatusCode)
 	}
 
