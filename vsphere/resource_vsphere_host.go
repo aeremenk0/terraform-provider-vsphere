@@ -2,6 +2,7 @@ package vsphere
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/hashicorp/terraform/helper/schema"
@@ -50,6 +51,11 @@ func resourceVSphereHost() *schema.Resource {
 			Type:        schema.TypeString,
 			Description: "The managed object ID of the host's root resource pool.",
 			Computed:    true,
+		},
+		"service_policy": &schema.Schema{
+			Type:        schema.TypeMap,
+			Description: "Configuration for the host's service policy.",
+			Optional:    true,
 		},
 	}
 
@@ -467,6 +473,24 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		}
 	} else if connected == "0" {
 		if err := disconnectHost(vsClient, hostID); err != nil {
+			return err
+		}
+	}
+
+	servicePolicy := d.Get("service_policy").(map[string]interface{})
+
+	c := meta.(*VSphereClient).vimClient
+	dcID := d.Get("datacenter_id").(string)
+	dc, err := datacenterFromID(c, dcID)
+
+	hs, err := hostsystem.SystemOrDefault(c, hostname, dc)
+
+	ctx := context.Background()
+	hostConfigManager := hs.ConfigManager()
+	hostServiceSystem, err := hostConfigManager.ServiceSystem(ctx)
+
+	for serviceName, flag := range servicePolicy {
+		if err := hostServiceSystem.UpdatePolicy(ctx, serviceName, flag.(string)); err != nil {
 			return err
 		}
 	}
