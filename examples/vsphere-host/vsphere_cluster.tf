@@ -13,7 +13,7 @@ data "vsphere_datacenter" "dc"{
 variable "advanced" {
 	type="map"
 	default = {
-		
+		UserVars_HostClientWelcomeMessage = "This welcome message has been changed through the advanced options"
 	}
 }
 

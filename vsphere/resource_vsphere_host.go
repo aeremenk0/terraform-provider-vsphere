@@ -9,6 +9,7 @@ import (
 	"github.com/vmware/govmomi/govc/host/esxcli"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -483,25 +484,29 @@ func resourceVSphereHostUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	// Set advanced options
 	// come back to this
-	if val, ok := config["advanced_options"]; ok {
-		_ = val
-		argsAdv := []string{"system", "settings", "advanced", "set", "-o", "", "-s", ""}
+	//if val, ok := config["advanced_options"]; ok {
+	//	_ = val
+	argsAdv := []string{"system", "settings", "advanced", "set", "-o", "", "-s", ""}
 
-		values := config["advanced_options"].(map[string]string)
+	values := d.Get("advanced_options").(map[string]interface{})
 
-		for k := range values {
-			// Need to check if the arguement is supposed to be a string or an integer
-			if _, err := fmt.Sscanf(values[k], "%d", &k); err == nil {
-				argsAdv = []string{"system", "settings", "advanced", "set", "-o", k, "-i", values[k]}
-			} else {
-				argsAdv = []string{"system", "settings", "advanced", "set", "-o", k, "-s", values[k]}
-			}
+	for k := range values {
+		log.Printf("[DEBUG] SETTING ADVANCED OPTION : %s", "/"+strings.Replace(k, "_", "/", 1))
+		//return fmt.Errorf("[DEBUG] SETTING ADVANCED OPTION : %s - %s ","/"+strings.Replace(k,"_","/",1), values[k].(string))
+		// Need to check if the arguement is supposed to be a string or an integer
+		if _, err := fmt.Sscanf(values[k].(string), "%d", &k); err == nil {
 
-			if err := runEsxCliCommand(d, meta, argsAdv); err != nil {
-				return err
-			}
+			argsAdv = []string{"system", "settings", "advanced", "set", "-o", "/" + strings.Replace(k, "_", "/", 1), "-i", values[k].(string)}
+		} else {
+			argsAdv = []string{"system", "settings", "advanced", "set", "-o", "/" + strings.Replace(k, "_", "/", 1), "-s", values[k].(string)}
 		}
+
+		if err := runEsxCliCommand(d, meta, argsAdv); err != nil {
+			return err
+		}
+		log.Printf("[DEBUG] FINISHED SETTING ADVANCED OPTION : %s", k)
 	}
+	//}
 
 	vsClient := meta.(*VSphereClient)
 	hostID := d.Get("host_id").(string)
