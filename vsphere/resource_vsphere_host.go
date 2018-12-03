@@ -179,6 +179,12 @@ func getFolder(vsClient *VSphereClient) (string, error) {
 	return folder, nil
 }
 
+//func getHost(vsClient *VSphereClient, hostSpec HostSpec) (string, error) {
+//
+//
+//	return "", nil
+//}
+
 func createHost(vsClient *VSphereClient, hostSpec HostSpec) (string, error) {
 	r := make(map[string]interface{})
 
@@ -219,29 +225,12 @@ func deleteHost(vsClient *VSphereClient, hostID string) error {
 
 func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	// Watch out for this error: https://kb.vmware.com/s/article/2148065?lang=en_US
-
-	// Add the iscsi piece into this - high priority
-	// Add the ability to specify settings as a separate resource and pass that into the host
-	//	- ISCSI
-	// 	- NTP
-	//	- DNS
-	// 	- SSH
-	// 	- IP Address
-	// 	- Host name
-	// 	- Set username and password for the host
-	// add the ability to disconnect
-	// add the ability to wipe the esx state on delete
-
 	vsClient := meta.(*VSphereClient)
 
-	// Get the parameters for the API call
 	config := d.Get("host_config").(map[string]interface{})
-
 	hostname := d.Get("name").(string)
 	username := "root"
-
 	var password string
-	var connected string
 
 	// Try to get the connection credentials from the default fields.
 	// These fields are intended for initial login.
@@ -250,10 +239,6 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 
 	if val, ok := config["root_password"]; ok {
 		password = val.(string)
-	}
-
-	if val, ok := config["connected"]; ok {
-		connected = val.(string)
 	}
 
 	folder, err := getFolder(vsClient)
@@ -271,6 +256,58 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	d.Set("host_id", hostID)
+
+	return resourceVSphereHostUpdate(d, meta)
+}
+
+func resourceVSphereHostRead(d *schema.ResourceData, meta interface{}) error {
+	client := meta.(*VSphereClient).vimClient
+	name := d.Get("name").(string)
+	dcID := d.Get("datacenter_id").(string)
+	dc, err := datacenterFromID(client, dcID)
+	if err != nil {
+		return fmt.Errorf("error fetching datacenter: %s", err)
+	}
+
+	hs, err := hostsystem.SystemOrDefault(client, name, dc)
+	if err != nil {
+		return fmt.Errorf("error fetching host in resourceVSphereHostRead: %s", err)
+	}
+
+	rp, err := hostsystem.ResourcePool(hs)
+	if err != nil {
+		return err
+	}
+
+	err = d.Set("resource_pool_id", rp.Reference().Value)
+	if err != nil {
+		return err
+	}
+
+	id := hs.Reference().Value
+	d.SetId(id)
+
+	return nil
+}
+
+func resourceVSphereHostUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Add the iscsi piece into this - high priority
+	// Add the ability to specify settings as a separate resource and pass that into the host
+	//	- ISCSI
+	// 	- NTP
+	//	- DNS
+	// 	- SSH
+	// 	- IP Address
+	// 	- Host name
+	// 	- Set username and password for the host
+	// add the ability to disconnect
+	// add the ability to wipe the esx state on delete
+
+	// There isnt really much to do in order to update this stuff
+	// try to add but dont do anything if there is an error?
+
+	// maybe add abiity to disonnect host
+	//
 
 	// Set ISCSI
 	// Need:
@@ -300,6 +337,13 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 
 	*/
 
+	config := d.Get("host_config").(map[string]interface{})
+	var connected string
+
+	if val, ok := config["connected"]; ok {
+		connected = val.(string)
+	}
+
 	iscsiConfig := d.Get("iscsi_config").(map[string]interface{})
 
 	// iscsi software set -e true
@@ -313,8 +357,8 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		if val.(string) == "1" {
 			argsIscsi := []string{"iscsi", "software", "set", "-e", "true"}
 			// send to esx cli
-			err = runEsxCliCommand(d, meta, argsIscsi)
-			if err != nil {
+
+			if err := runEsxCliCommand(d, meta, argsIscsi); err != nil {
 				return err
 			}
 
@@ -344,8 +388,7 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 			*/
 
 			// Set the ISCSI Chap config
-			err = validateIscsiChapInputs(iscsiConfig)
-			if err == nil {
+			if err := validateIscsiChapInputs(iscsiConfig); err == nil {
 				argsIscsiChap := []string{"iscsi", "adapter", "auth", "chap", "set", "-A", iscsiConfig["adapter_name"].(string), "-N", iscsiConfig["chap_name"].(string), "-S", iscsiConfig["chap_secret"].(string), "-l", iscsiConfig["chap_level"].(string)}
 				// send to esx cli
 				err = runEsxCliCommand(d, meta, argsIscsiChap)
@@ -367,8 +410,8 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 
 			// iSCSI set target
 			// WIP
-			err = validateIscsiSendTargetInputs(iscsiConfig)
-			if err == nil {
+
+			if err := validateIscsiSendTargetInputs(iscsiConfig); err == nil {
 				argsIscsiTarget := []string{"iscsi", "adapter", "discovery", "sendtarget", "add", "-A", iscsiConfig["adapter_name"].(string), "-a", iscsiConfig["send_target"].(string)}
 				// send to esx cli
 				err = runEsxCliCommand(d, meta, argsIscsiTarget)
@@ -383,8 +426,8 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		} else {
 			argsIscsi := []string{"iscsi", "software", "set", "-e", "false"}
 			// send to esx cli
-			err = runEsxCliCommand(d, meta, argsIscsi)
-			if err != nil {
+
+			if err := runEsxCliCommand(d, meta, argsIscsi); err != nil {
 				return err
 			}
 		}
@@ -399,7 +442,7 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 			argsMaint = []string{"system", "maintenanceMode", "set", "-e", "false"}
 		}
 		// send to esx cli
-		err = runEsxCliCommand(d, meta, argsMaint)
+		err := runEsxCliCommand(d, meta, argsMaint)
 		_ = err
 	}
 
@@ -453,12 +496,15 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 			} else {
 				argsAdv = []string{"system", "settings", "advanced", "set", "-o", k, "-s", values[k]}
 			}
-			err = runEsxCliCommand(d, meta, argsAdv)
-			if err != nil {
+
+			if err := runEsxCliCommand(d, meta, argsAdv); err != nil {
 				return err
 			}
 		}
 	}
+
+	vsClient := meta.(*VSphereClient)
+	hostID := d.Get("host_id").(string)
 
 	// Set whether the host is connected or not
 	if connected == "1" {
@@ -472,48 +518,6 @@ func resourceVSphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	return resourceVSphereHostRead(d, meta)
-}
-
-func resourceVSphereHostRead(d *schema.ResourceData, meta interface{}) error {
-	client := meta.(*VSphereClient).vimClient
-	name := d.Get("name").(string)
-	dcID := d.Get("datacenter_id").(string)
-	dc, err := datacenterFromID(client, dcID)
-	if err != nil {
-		return fmt.Errorf("error fetching datacenter: %s", err)
-	}
-
-	hs, err := hostsystem.SystemOrDefault(client, name, dc)
-	if err != nil {
-		return fmt.Errorf("error fetching host in resourceVSphereHostRead: %s", err)
-	}
-
-	rp, err := hostsystem.ResourcePool(hs)
-	if err != nil {
-		return err
-	}
-
-	err = d.Set("resource_pool_id", rp.Reference().Value)
-	if err != nil {
-		return err
-	}
-
-	id := hs.Reference().Value
-	d.SetId(id)
-
-	return nil
-}
-
-func resourceVSphereHostUpdate(d *schema.ResourceData, meta interface{}) error {
-	// There isnt really much to do in order to update this stuff
-	// try to add but dont do anything if there is an error?
-
-	// maybe add abiity to disonnect host
-	//
-
-	err := resourceVSphereHostCreate(d, meta)
-
-	return err
 }
 
 func resourceVSphereHostDelete(d *schema.ResourceData, meta interface{}) error {
