@@ -1,9 +1,8 @@
 package vsphere
 
 import (
-	"fmt"
-
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
@@ -48,29 +47,43 @@ func resourceVSphereHostVirtualSwitch() *schema.Resource {
 		Update:        resourceVSphereHostVirtualSwitchUpdate,
 		Delete:        resourceVSphereHostVirtualSwitchDelete,
 		CustomizeDiff: resourceVSphereHostVirtualSwitchCustomizeDiff,
-		Schema:        s,
+		Importer: &schema.ResourceImporter{
+			State: resourceVSphereHostVirtualSwitchImport,
+		},
+		Schema: s,
 	}
 }
 
 func resourceVSphereHostVirtualSwitchCreate(d *schema.ResourceData, meta interface{}) error {
-	client := meta.(*VSphereClient).vimClient
-	name := d.Get("name").(string)
-	hsID := d.Get("host_system_id").(string)
-	ns, err := hostNetworkSystemFromHostSystemID(client, hsID)
-	if err != nil {
-		return fmt.Errorf("error loading host network system: %s", err)
+
+	// try to read first, and only create if read comes out empty
+	hsId := d.Get("host_system_id").(string)
+	switchName := d.Get("name").(string)
+	d.SetId("tf-HostVirtualSwitch:" + hsId + ":" + switchName)
+	err := resourceVSphereHostVirtualSwitchRead(d, meta)
+
+	if err == nil {
+		return resourceVSphereHostVirtualSwitchUpdate(d, meta)
+	} else {
+		client := meta.(*VSphereClient).vimClient
+		name := d.Get("name").(string)
+		hsID := d.Get("host_system_id").(string)
+		ns, err := hostNetworkSystemFromHostSystemID(client, hsID)
+		if err != nil {
+			return fmt.Errorf("error loading host network system: %s", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+		defer cancel()
+		spec := expandHostVirtualSwitchSpec(d)
+		if err := ns.AddVirtualSwitch(ctx, name, spec); err != nil {
+			return fmt.Errorf("error adding host vSwitch: %s", err)
+		}
+
+		saveHostVirtualSwitchID(d, hsID, name)
+
+		return resourceVSphereHostVirtualSwitchRead(d, meta)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
-	defer cancel()
-	spec := expandHostVirtualSwitchSpec(d)
-	if err := ns.AddVirtualSwitch(ctx, name, spec); err != nil {
-		return fmt.Errorf("error adding host vSwitch: %s", err)
-	}
-
-	saveHostVirtualSwitchID(d, hsID, name)
-
-	return resourceVSphereHostVirtualSwitchRead(d, meta)
 }
 
 func resourceVSphereHostVirtualSwitchRead(d *schema.ResourceData, meta interface{}) error {
@@ -169,4 +182,28 @@ func resourceVSphereHostVirtualSwitchCustomizeDiff(d *schema.ResourceDiff, meta 
 	}
 
 	return nil
+}
+
+func resourceVSphereHostVirtualSwitchImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	client := meta.(*VSphereClient).vimClient
+	hsID, name, err := virtualSwitchIDsFromResourceID(d)
+	if err != nil {
+		return nil, err
+	}
+	ns, err := hostNetworkSystemFromHostSystemID(client, hsID)
+	if err != nil {
+		return nil, fmt.Errorf("error loading host network system: %s", err)
+	}
+
+	sw, err := hostVSwitchFromName(client, ns, name)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching virtual switch data: %s", err)
+	}
+
+	if err := flattenHostVirtualSwitchSpec(d, &sw.Spec); err != nil {
+		return nil, fmt.Errorf("error setting resource data: %s", err)
+	}
+
+	return []*schema.ResourceData{d}, nil
+
 }

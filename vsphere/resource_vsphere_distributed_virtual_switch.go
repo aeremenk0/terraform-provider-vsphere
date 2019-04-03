@@ -3,7 +3,6 @@ package vsphere
 import (
 	"context"
 	"fmt"
-
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
 	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/folder"

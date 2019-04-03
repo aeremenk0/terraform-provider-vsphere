@@ -2,7 +2,6 @@ package vsphere
 
 import (
 	"fmt"
-
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 )
@@ -26,6 +25,21 @@ func dataSourceVSphereHost() *schema.Resource {
 				Type:        schema.TypeString,
 				Description: "The managed object ID of the host's root resource pool.",
 				Computed:    true,
+			},
+			"host_id": &schema.Schema{
+				Type:        schema.TypeString,
+				Description: "The managed object ID of the host.",
+				Computed:    true,
+			},
+			"username": &schema.Schema{
+				Type:        schema.TypeString,
+				Description: "The username used to log into the host.",
+				Optional:    true,
+			},
+			"password": &schema.Schema{
+				Type:        schema.TypeString,
+				Description: "The password used to log into the host.",
+				Optional:    true,
 			},
 		},
 	}

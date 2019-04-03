@@ -60,6 +60,7 @@ func FromID(client *govmomi.Client, id string) (*object.HostSystem, error) {
 // Properties is a convenience method that wraps fetching the HostSystem MO
 // from its higher-level object.
 func Properties(host *object.HostSystem) (*mo.HostSystem, error) {
+
 	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
 	defer cancel()
 	var props mo.HostSystem
@@ -103,6 +104,7 @@ func NameOrID(client *govmomi.Client, id string) string {
 // block until this is the case, depending on whether or not DRS is on or off
 // for the host's cluster. This parameter is ignored on direct ESXi.
 func EnterMaintenanceMode(host *object.HostSystem, timeout int, evacuate bool) error {
+
 	if err := viapi.VimValidateVirtualCenter(host.Client()); err != nil {
 		evacuate = false
 	}

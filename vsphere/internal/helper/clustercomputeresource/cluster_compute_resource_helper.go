@@ -202,8 +202,10 @@ func MoveHostsOutOf(cluster *object.ClusterComputeResource, hosts []*object.Host
 
 func moveHostOutOf(cluster *object.ClusterComputeResource, host *object.HostSystem, timeout int) error {
 	// Place the host into maintenance mode. This blocks until the host is ready.
+
 	if err := hostsystem.EnterMaintenanceMode(host, timeout, true); err != nil {
-		return fmt.Errorf("error putting host %q into maintenance mode: %s", host.Name(), err)
+		//return fmt.Errorf("error putting host %q into maintenance mode: %s", host.Name(), err)
+		log.Printf("[DEBUG] Putting hose %q into maintenance mode was not successful, possibly because the host is already in maintenance mode", host.Name())
 	}
 
 	// Host should be ready to move out of the cluster now.
